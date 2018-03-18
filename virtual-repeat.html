@@ -1,0 +1,679 @@
+<link rel="import" href="../polymer/polymer-element.html">
+
+<dom-module id="virtual-repeat">
+    <script>
+
+    (function () {
+
+        /**
+         * `virtual-repeat`
+         * a high performance items repeater inspired by iOS UITableView, supports multiple items templates, variable item heights, and sticky headers
+         *
+         * @customElement
+         * @polymer
+         * @demo demo/index.html
+         */
+
+        const DEFAULT = Symbol('default');
+        const HEADER = Symbol('header');
+
+        class VirtualRepeat extends Polymer.Element {
+            static get is() {
+                return 'virtual-repeat';
+            }
+
+            static get properties() {
+                return {
+                    items: {
+                        type: Array,
+                        value: function () {
+                            return [];
+                        }
+                    },
+
+                    groups: {
+                        type: Array
+                    },
+
+                    /**
+                     * The name of the property of an item to look at to verify
+                     */
+                    typePropertyName: {
+                        type: String,
+                        value: 'type'
+                    },
+
+
+                    /**
+                     * The name of the variable to add to the binding scope for the array
+                     * element associated with a given template instance.
+                     */
+                    as: {
+                        type: String,
+                        value: 'item'
+                    },
+
+                    /**
+                     * The name of the variable to add to the binding scope for the array
+                     * element associated with a given template instance.
+                     */
+                    groupAs: {
+                        type: String,
+                        value: 'group'
+                    },
+
+                    /**
+                     * The name of the variable to add to the binding scope with the index
+                     * of the instance in the sorted and filtered list of rendered items.
+                     * Note, for the index in the `this.items` array, use the value of the
+                     * `itemsIndexAs` property.
+                     */
+                    indexAs: {
+                        type: String,
+                        value: 'index'
+                    },
+
+                    /**
+                     * The name of the variable to add to the binding scope with the index
+                     * of the instance in the `this.items` array. Note, for the index of
+                     * this instance in the sorted and filtered list of rendered items,
+                     * use the value of the `indexAs` property.
+                     */
+                    itemsIndexAs: {
+                        type: String,
+                        value: 'itemsIndex'
+                    }
+                };
+            }
+
+            static get observers() {
+                return [
+                    '_itemsChanged(items.*)',
+                    '_groupsChanged(groups.*)',
+                ];
+            }
+
+            constructor() {
+                super();
+            }
+
+            init() {
+                if (!this.__isItemGroup) {
+                    this.__isItemGroup = new WeakSet();
+                }
+                this._setupForTemplates(this.querySelectorAll('template'));
+            }
+
+            connectedCallback() {
+                super.connectedCallback();
+
+                this.style.overflow = 'auto';
+                this.style.display = 'block';
+                this.style.position = 'relative';
+
+                let lastScrollTop;
+
+                const onFrame = () => {
+                    let shouldRender = false;
+                    if (this.scrollTop !== lastScrollTop) {
+                        shouldRender = true;
+                        lastScrollTop = this.scrollTop;
+                    }
+
+                    if (this.clientHeight !== this._viewportHeight) {
+                        shouldRender = true;
+                        this._viewportHeight = this.clientHeight;
+                    }
+
+                    if (shouldRender) {
+                        this._render();
+                    }
+                    window.requestAnimationFrame(onFrame);
+                };
+
+                window.requestAnimationFrame(onFrame);
+
+//                this.addEventListener('scroll', e => {
+//                    this._render(e);
+//                });
+
+
+                window.getComputedStyle(this);
+                this._viewportHeight = this.getBoundingClientRect().height || this.clientHeight;
+                console.log('_viewportHeight', this._viewportHeight);
+            }
+
+            _createDefaultHeaderTemplate() {
+                const t = document.createElement('template');
+                const header = document.createElement('header');
+                header.style.height = '24px';
+                header.style.borderBottom = '1px solid #ccc';
+                header.backgroundColor = 'rgba(255,255,255,0.85)';
+                t.appendChild(header);
+                return t;
+            }
+
+            _addTemplate(template, templateType) {
+                if (!this._ctors[templateType]) {
+                    this._ctors[templateType] = this._createCtorForTemplate(template);
+                }
+
+                if (!this._pool[templateType]) {
+                    this._pool[templateType] = [];
+                }
+
+                if (!this._heights[templateType]) {
+                    let tempElement = document.createElement('div');
+                    tempElement.appendChild(document.importNode(template.content, true));
+                    tempElement.style.visibility = 'hidden';
+                    this._listElement.append(tempElement);
+                    window.getComputedStyle(tempElement);
+                    this._heights[templateType] = tempElement.getBoundingClientRect().height;
+                    tempElement.remove();
+                }
+            }
+
+            _setupForTemplates(templates) {
+                if (templates.length === 0) {
+                    throw new Error('virtual-repeat requires at least one <template> child');
+                }
+                this._listElement = templates[0].parentElement;
+                if (this._listElement === this) {
+                    this._listElement = document.createElement('div');
+                    this.appendChild(this._listElement);
+                }
+                this._listElement.style.position = 'relative';
+
+                // init instance elements ctors and pools
+                this._ctors = {};
+                this._pool = {};
+                this._heights = {};
+                this._templates = templates;
+
+                this._templates.forEach(template => {
+                    let templateType = template.getAttribute('for') || DEFAULT;
+
+                    if (templateType === DEFAULT) {
+                        if (template.hasAttribute('for-header')) {
+                            templateType = HEADER;
+                        }
+                    }
+
+                    this._addTemplate(template, templateType);
+
+                });
+
+                if (!this._ctors[HEADER]) {
+                    this._addTemplate(this._createDefaultHeaderTemplate(), HEADER);
+                }
+
+                window.requestAnimationFrame(() => { window.requestAnimationFrame(() => {
+                    this._isReady = true;
+                    this._calculateHeightAndPositions();
+                    this._render();
+                })});
+            }
+
+
+            _createCtorForTemplate(template) {
+                // Template instance props that should be excluded from forwarding
+                let instanceProps = {};
+                instanceProps[this.as] = true;
+                instanceProps[this.groupAs] = true;
+                instanceProps[this.indexAs] = true;
+                instanceProps[this.itemsIndexAs] = true;
+                instanceProps.forType = true;
+                let ctor = Polymer.Templatize.templatize(template, this, {
+                    mutableData: this.mutableData,
+                    parentModel: true,
+                    instanceProps: instanceProps,
+                    /**
+                     * @this {this}
+                     * @param {string} prop Property to set
+                     * @param {*} value Value to set property to
+                     */
+                    forwardHostProp: function (prop, value) {
+                        let i$ = this.__instances;
+                        for (let i = 0, inst; (i < i$.length) && (inst = i$[i]); i++) {
+                            inst.forwardHostProp(prop, value);
+                        }
+                    },
+                    /**
+                     * @this {this}
+                     * @param {Object} inst Instance to notify
+                     * @param {string} prop Property to notify
+                     * @param {*} value Value to notify
+                     */
+                    notifyInstanceProp: function (inst, prop, value) {
+                        if (Polymer.Path.matches(this.as, prop)) {
+                            let idx = inst[this.itemsIndexAs];
+                            if (prop == this.as) {
+                                this.items[idx] = value;
+                            }
+                            let path = Polymer.Path.translate(this.as, 'items.' + idx, prop);
+                            this.notifyPath(path, value);
+                        }
+                    }
+                });
+
+                return ctor;
+            }
+
+            _elementForItem(item, instIdx, itemIdx) {
+
+                if (!this._instanceForItemMap) {
+                    this._instanceForItemMap = typeof item === 'object' ? new WeakMap() : {
+                        _items: {},
+                        has: function (key) {
+                            return this._items.hasOwnProperty(key);
+                        },
+                        get: function (key) {
+                            return this._items[key];
+                        },
+                        set: function (key, value) {
+                            return this._items[key] = value;
+                        },
+                        delete: function (key) {
+                            return delete this._items[key];
+                        }
+                    };
+
+                    this._elementForInstance = new WeakMap();
+                }
+
+                if (this._instanceForItemMap.has(item)) {
+                    let instance = this._instanceForItemMap.get(item);
+                    return this._elementForInstance.get(instance);
+                }
+
+                let group;
+                if (this.itemIndexToGroupIndex && this.itemIndexToGroupIndex.hasOwnProperty(instIdx)) {
+                    group = this.itemForIndex(this.itemIndexToGroupIndex[instIdx]);
+                }
+                let type = this.typeOfItem(item);
+                let instance = this._pool[type].pop();
+                let element;
+
+                if (instance) {
+                    element = this._elementForInstance.get(instance);
+                    instance._setPendingProperty(this.as, item);
+                    instance._setPendingProperty(this.groupAs, group);
+                    instance._setPendingProperty(this.indexAs, instIdx);
+                    instance._setPendingProperty(this.itemsIndexAs, itemIdx);
+                    instance._setPendingProperty('forType', type);
+                    instance._flushProperties();
+                } else {
+                    instance = this.__stampInstance(item, group, instIdx, itemIdx, type);
+                    element = document.createElement('div');
+                    element.appendChild(instance.root);
+
+                    element.style.width = '100%';
+                    element.style.overflow = 'hidden';
+                    element.style.height = this.heightOfItem(item) + 'px';
+                    element.style.transform = 'translate3d(0, -100%, 0)';
+
+                    if (type === HEADER) {
+                        element.style.zIndex = 1;
+                        element.style.position = 'sticky';
+                    } else {
+                        element.style.top = '0';
+                        element.style.position = 'absolute';
+                    }
+
+                    this._listElement.appendChild(element);
+                    this._elementForInstance.set(instance, element);
+                }
+
+                this._instanceForItemMap.set(item, instance);
+                return element;
+            }
+
+            _detachInstance(instance) {
+                this._elementForInstance.get(instance).style.position = 'block';
+                this._elementForInstance.get(instance).style.transform = `translate3d(0, -100%, 0)`;
+                instance._setPendingProperty(this.as, undefined);
+                instance._setPendingProperty(this.indexAs, -1);
+                instance._setPendingProperty(this.itemsIndexAs, -1);
+                instance._setPendingProperty(this.groupAs, undefined);
+                instance._flushProperties();
+                this._pool[instance.forType].push(instance);
+            }
+
+            _calculateHeightAndPositions(startFromIndex = 0) {
+
+                if (!this._positions) {
+                    startFromIndex = 0;
+                }
+
+                this._totalHeight = this._totalHeight || 0;
+                this._positions = this._positions || new Array(this.items.length);
+
+                if (startFromIndex) {
+                    this._totalHeight = this._positions[startFromIndex];
+                    this._positions.splice(startFromIndex, this._positions.length - startFromIndex);
+                }
+
+                for (let i = startFromIndex; i < this.items.length; i++) {
+                    let item = this.itemForIndex(i);
+                    this._positions[i] = this._totalHeight;
+                    this._totalHeight += this.heightOfItem(item);
+                }
+
+                this._listElement.style.height = this._totalHeight + 'px';
+
+                return this._totalHeight;
+            }
+
+            itemHeightChanged(itemIndex) {
+                this._heightChangedIndex = this._heightChangedIndex || Number.MAX_SAFE_INTEGER;
+                this._heightChangedIndex = Math.min(itemIndex, this._heightChangedIndex);
+
+                if (this._clearer) {
+                    clearTimeout(this._clearer);
+                    delete this._clearer;
+                }
+
+                this._clearer = setTimeout(() => {
+                    this._calculateHeightAndPositions(this._heightChangedIndex);
+                    this._heightChangedIndex = Number.MAX_SAFE_INTEGER;
+                    requestAnimationFrame(() => {
+                        this.render();
+                    });
+                    delete this._clearer;
+                }, 0);
+
+            }
+
+            /* @overridable with delegate or extending object */
+            itemForIndex(itemIndex, groupIndex = 0) {
+                return this.items[itemIndex]
+            }
+
+            typeOfItem (item) {
+                return this.__isItemGroup.has(item) ? HEADER : item[this.typePropertyName] || DEFAULT;
+            }
+
+            heightOfItem(item) {
+                let type = this.typeOfItem(item);
+                return this._heights[type];
+            }
+
+            set delegate(delegate) {
+
+                const optionalDelegateMethods = [
+                    'itemForIndex',
+                    'typeOfItem',
+                    'heightOfItem'
+                ];
+
+                // remove delegate
+                if (!delegate) {
+                    delete this.__delegate;
+                    optionalDelegateMethods.forEach(method => {
+                        if (this.hasOwnProperty(method)) {
+                            delete this[method];
+                        }
+                    });
+
+                    return;
+                }
+
+                if (typeof delegate !== 'object') {
+                    return;
+                }
+
+                optionalDelegateMethods.forEach(method => {
+                    if (typeof delegate[method] === 'function') {
+                        this[method] = delegate[method].bind(delegate);
+                    }
+                });
+            }
+            /* @overridable */
+
+            ready() {
+                super.ready();
+
+                this.init();
+            }
+
+            __stampInstance(item, group, instIdx, itemIdx, type) {
+                let model = {};
+                model[this.as] = item;
+                model[this.groupAs] = group;
+                model[this.indexAs] = instIdx;
+                model[this.itemsIndexAs] = itemIdx;
+                model.forType = type;
+                return new this._ctors[type](model);
+            }
+
+            // Called as a side effect of a host items.<key>.<path> path change,
+            // responsible for notifying item.<path> changes to inst for key
+            __handleItemPath(path, value) {
+                let itemsPath = path.slice(6); // 'items.'.length == 6
+                let dot = itemsPath.indexOf('.');
+                let itemsIdx = dot < 0 ? itemsPath : itemsPath.substring(0, dot);
+                // If path was index into array...
+                if (itemsIdx == parseInt(itemsIdx, 10)) {
+                    let itemSubPath = dot < 0 ? '' : itemsPath.substring(dot + 1);
+                    // If the path is observed, it will trigger a full refresh
+                    this.__handleObservedPaths(itemSubPath);
+                    // Note, even if a rull refresh is triggered, always do the path
+                    // notification because unless mutableData is used for dom-repeat
+                    // and all elements in the instance subtree, a full refresh may
+                    // not trigger the proper update.
+                    let instIdx = this.__itemsIdxToInstIdx[itemsIdx];
+                    let inst = this.__instances[instIdx];
+                    if (inst) {
+                        let itemPath = this.as + (itemSubPath ? '.' + itemSubPath : '');
+                        // This is effectively `notifyPath`, but avoids some of the overhead
+                        // of the public API
+                        inst._setPendingPropertyOrPath(itemPath, value, false, true);
+                        inst._flushProperties();
+                    }
+                    return true;
+                }
+            }
+
+            __debounceRender(fn, delay = 0) {
+                this.__renderDebouncer = Polymer.Debouncer.debounce(
+                    this.__renderDebouncer
+                    , delay > 0 ? Polymer.Async.timeOut.after(delay) : Polymer.Async.microTask
+                    , fn.bind(this));
+                Polymer.enqueueDebouncer(this.__renderDebouncer);
+            }
+
+            _groupsChanged() {
+
+                if (!this.__isItemGroup) {
+                    this.__isItemGroup = new WeakSet();
+                }
+
+                if (this.groups) {
+                    this.items = [];
+                    this.itemIndexToGroupIndex = {};
+                    let itemIndex = 0;
+                    this.groups.forEach(group => {
+
+                        const groupItemIndex = itemIndex;
+                        this.__isItemGroup.add(group);
+
+                        this.items.push(group);
+                        this.itemIndexToGroupIndex[itemIndex] = groupItemIndex;
+                        itemIndex++;
+
+                        group.items.forEach(item => {
+                             this.items.push(item);
+                             this.itemIndexToGroupIndex[itemIndex] = groupItemIndex;
+                            itemIndex++;
+                        });
+                    })
+                }
+            }
+
+            _itemsChanged(change) {
+
+                if (this.items && !Array.isArray(this.items)) {
+                    console.warn('virtual-repeat expected array for `items`, found', this.items);
+                }
+
+
+
+                // If path was to an item (e.g. 'items.3' or 'items.3.foo'), forward the
+                // path to that instance synchronously (returns false for non-item paths)
+                if (!this.__handleItemPath(change.path, change.value)) {
+                    // Otherwise, the array was reset ('items') or spliced ('items.splices'),
+                    // so queue a full refresh
+                    this.__debounceRender(this._render);
+                }
+
+                if (this._isReady) {
+                    this._calculateHeightAndPositions();
+                }
+            }
+
+            _getItemIndexForPosition(position, start = 0) {
+                let positions = this._positions;
+                let index = start;
+                for (; index < positions.length && positions[index] <= position; index++) {
+                }
+                return index;
+            }
+
+            _getViewableItemsRange() {
+
+                let startPosition = Math.max(this.scrollTop - this._viewportHeight / 2, 0);
+                let start = Math.max(0, this._getItemIndexForPosition(startPosition) - 1);
+                let endPosition = startPosition + (this._viewportHeight * 2);
+                let end = Math.min(this._positions.length, this._getItemIndexForPosition(endPosition, start) + 1);
+                return {start, end};
+            }
+
+            _discard(startIndex, endIndex) {
+
+                for (let i = startIndex; i < endIndex; i++) {
+                    let item = this.itemForIndex(i);
+                    if (this._instanceForItemMap.has(item) && (!this._visibleHeaders || this._visibleHeaders.indexOf(i) === -1)) {
+                        let instance = this._instanceForItemMap.get(item);
+                        this._instanceForItemMap.delete(item);
+                        this._detachInstance(instance);
+                    }
+
+
+                }
+
+            }
+
+            _renderHeaders() {
+                if (!this._visibleHeaders) {
+                    return;
+                }
+                const headerIndexes = this._visibleHeaders;
+
+                let nextHeaderPosition = Number.MAX_SAFE_INTEGER;
+                for (let i = headerIndexes.length; i >= 0; i--) {
+
+                    const headerIndex = headerIndexes[i];
+                    const item = this.itemForIndex(headerIndex);
+                    if (item) {
+                        const element = this._elementForItem(item, headerIndex, headerIndex);
+                        let height = this.heightOfItem(this.itemForIndex(headerIndex));
+                        let pos = this._positions[headerIndex];
+
+                        if (pos <= this.scrollTop) {
+
+                            let staticPosition = 0;
+                            if (nextHeaderPosition - this.scrollTop < height) {
+                                staticPosition -= (height - (nextHeaderPosition - this.scrollTop));
+                            }
+                            element.style.top = 0;
+                            element.style.transform = `translate3d(0, ${staticPosition}px, 0)`;
+                            if (element !== this._activeHeader) {
+                                if (this._activeHeader) {
+                                    this._listElement.appendChild(this._activeHeader);
+                                }
+                                this.insertBefore(element, this._listElement);
+                                this._activeHeader = element;
+                            }
+                        } else {
+                            if (element === this._activeHeader) {
+                                this.appendChild(element);
+                                this._activeHeader = null;
+                            }
+                        }
+
+                        nextHeaderPosition = pos;
+                    }
+
+
+                }
+
+
+            }
+
+            _render() {
+
+                if (!this._positions || !this.items.length) {
+                    return;
+                }
+
+                //this._renderHeaders();
+
+                if (this._lastRenderedScrollTop &&
+                    (Math.abs(this.scrollTop - this._lastRenderedScrollTop) < this._viewportHeight / 2)) {
+                    return;
+                }
+
+                let {start, end} = this._getViewableItemsRange();
+
+
+                // find out elements to detach
+                if (this._lastViewedElements) {
+                    this._discard(this._lastViewedElements.start, start);
+                    this._discard(end, this._lastViewedElements.end);
+                }
+
+                let lastVisibleHeaderIndex = -1;
+                if (this.groups) {
+                    this._visibleHeaders = [];
+                }
+
+                for (let i = start; i < end; i++) {
+                    const item = this.itemForIndex(i);
+                    const element = this._elementForItem(item, i, i);
+                    const type = this.typeOfItem(item);
+                    let pos = this._positions[i];
+
+                    if (type === HEADER) {
+                        element.style.top = pos;
+                        element.style.position = 'sticky';
+                        element.style.transform = `translate3d(0, 0, 0)`;
+                    } else {
+                        element.style.top = 0;
+                        element.style.position = 'block';
+                        element.style.transform = `translate3d(0, ${pos}px, 0)`;
+                    }
+
+                    if (this.groups) {
+                        const headerIndex = this.itemIndexToGroupIndex[i] || 0;
+                        if (headerIndex > lastVisibleHeaderIndex) {
+                            this._visibleHeaders.push(headerIndex);
+                        }
+
+                        lastVisibleHeaderIndex = headerIndex;
+                    }
+                }
+
+                //this._renderHeaders();
+                this._lastViewedElements = {start, end};
+                this._lastRenderedScrollTop = this.scrollTop;
+
+            }
+
+
+        }
+
+        window.customElements.define(VirtualRepeat.is, VirtualRepeat);
+        window.VirtualRepeat = VirtualRepeat;
+    })();
+    </script>
+</dom-module>

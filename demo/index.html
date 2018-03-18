@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, minimum-scale=1, initial-scale=1, user-scalable=yes">
+
+    <title>virtual-repeat demo</title>
+
+    <script src="../../webcomponentsjs/webcomponents-lite.js"></script>
+
+    <link rel="import" href="../../iron-demo-helpers/demo-pages-shared-styles.html">
+    <link rel="import" href="../../iron-demo-helpers/demo-snippet.html">
+    <link rel="import" href="../virtual-repeat.html">
+
+    <custom-style>
+        <style is="custom-style" include="demo-pages-shared-styles">
+        </style>
+    </custom-style>
+</head>
+<body>
+
+    <div id="headers" class="vertical-section-container centered">
+    <h3>virtual-repeat with multiple templates</h3>
+    <demo-snippet>
+        <template>
+            <style>
+
+                virtual-repeat {
+                    height: 300px;
+                    border: 1px solid #ccc;
+                    -webkit-overflow-scrolling: touch;
+                }
+
+                div.item1 {
+                    margin: 0;
+                    padding: 5px;
+                    background-color: #eee;
+                    border-bottom: 1px solid #ccc;
+                }
+
+                p.item2 {
+                    height: 40px;
+                    padding: 12px;
+                    margin: 0;
+                    background-color: #86cc8b
+                }
+
+                header {
+                    background-color: white;
+                    border-bottom: #ccc 2px solid;
+                    font-weight: bold;
+                    padding: 3px;
+                    height: 20px;
+                }
+
+            </style>
+
+            <virtual-repeat group-as="g">
+                <template for-header>
+                    <header>Header {{g.name}} {{g.items.length}}</header>
+                </template>
+
+                <template for="type1">
+                    <div class="item1">
+                        {{index}}: {{item.name}}
+                        <br>sss
+                    </div>
+                </template>
+                <template for="type2">
+                    <p class="item2">{{index}}: {{item.name}} type 2</p>
+                </template>
+            </virtual-repeat>
+
+            <script>
+                (function () {
+                    let virtualRepeat = document.querySelector('#headers virtual-repeat');
+                    let groups = [];
+
+                    for (let i = 0; i < 5; i++) {
+
+                        let items = [];
+                        for (let j = 0; j < 7; j++) {
+
+                            items.push({
+                                name: 'item ' + j,
+                                type: 'type' + (((j % 3) === 0) ? '2' : '1')
+                            });
+                        }
+
+                        groups[i] = {
+                            name: 'group ' + i,
+                            items: items
+                        };
+                    }
+
+                    virtualRepeat.groups = groups;
+                })();
+            </script>
+        </template>
+    </demo-snippet>
+</div>
+
+    <div id="basic" class="vertical-section-container centered">
+        <h3>Basic virtual-repeat demo</h3>
+        <demo-snippet>
+            <template>
+                <virtual-repeat>
+                    <template>{{index}}: {{item.name}}</template>
+                </virtual-repeat>
+
+                <script>
+                    (function () {
+                        let virtualRepeat = document.querySelector('#basic virtual-repeat');
+                        let items = [];
+
+                        for (let i = 0; i < 10000; i++) {
+                            items.push({
+                                name: 'simple item ' + i,
+                            });
+                        }
+                        virtualRepeat.items = items;
+                    })();
+                </script>
+            </template>
+        </demo-snippet>
+    </div>
+
+    <div id="multiTemplates" class="vertical-section-container centered">
+        <h3>virtual-repeat with multiple templates</h3>
+        <demo-snippet>
+            <template>
+                <style>
+
+                    virtual-repeat {
+                        height: 300px;
+                        border: 1px solid #ccc;
+                        -webkit-overflow-scrolling: touch;
+                    }
+
+                    div.item1 {
+                        margin: 0;
+                        padding: 5px;
+                        background-color: #eee;
+                        border-bottom: 1px solid #ccc;
+                    }
+
+                    p.item2 {
+                        height: 40px;
+                        padding: 12px;
+                        margin: 0;
+                        background-color: #86cc8b
+                    }
+
+                </style>
+
+                <virtual-repeat>
+                    <template for="type1">
+                        <div class="item1">
+                            {{index}}: {{item.name}}
+                            <br>sss
+                        </div>
+                    </template>
+                    <template for="type2">
+                        <p class="item2">{{index}}: {{item.name}} type 2</p>
+                    </template>
+                </virtual-repeat>
+
+                <script>
+                    (function () {
+                        let virtualRepeat = document.querySelector('#multiTemplates virtual-repeat');
+                        let items = [];
+
+                        for (let i = 0; i < 25000; i++) {
+                            items.push({
+                                name: 'item ' + i,
+                                type: 'type' + (((i % 3) === 0) ? '2' : '1')
+                            });
+                        }
+                        virtualRepeat.items = items;
+                    })();
+                </script>
+            </template>
+        </demo-snippet>
+    </div>
+</body>
+</html>
