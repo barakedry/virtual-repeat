@@ -110,6 +110,9 @@
                 this.style.overflow = 'auto';
                 this.style.display = 'block';
                 this.style.position = 'relative';
+                if (!this.style.transform) {
+                    this.style.transform = 'translate3d(0,0,0)';
+                }
 
                 let lastScrollTop;
 
@@ -183,6 +186,7 @@
                     this.appendChild(this._listElement);
                 }
                 this._listElement.style.position = 'relative';
+                this._listElement.style.transform = 'translate3d(0px, 0px, 0px)';
 
                 // init instance elements ctors and pools
                 this._ctors = {};
@@ -342,7 +346,7 @@
                     startFromIndex = 0;
                 }
 
-                this._totalHeight = this._totalHeight || 0;
+                this._totalHeight = 0;
                 this._positions = this._positions || new Array(this.items.length);
 
                 if (startFromIndex) {
@@ -525,6 +529,7 @@
 
                 if (this._isReady) {
                     this._calculateHeightAndPositions();
+                    this._render(true);
                 }
             }
 
@@ -584,7 +589,7 @@
                             }
                             element.style.top = '-1px';
                             element.style.transform = `translate3d(0, ${staticPosition}px, 0)`;
-                            element.style.position = '-webkit-sticky';
+                            element.style.position = 'sticky';
                         } else {
                             element.style.position = 'block';
                         }
@@ -598,7 +603,7 @@
 
             }
 
-            _render() {
+            _render(force) {
 
                 if (!this._positions || !this.items.length) {
                     return;
@@ -606,7 +611,7 @@
 
                 this._renderHeaders();
 
-                if (this._lastRenderedScrollTop &&
+                if (force !== true && this._lastRenderedScrollTop &&
                     (Math.abs(this.scrollTop - this._lastRenderedScrollTop) < this._viewportHeight / 2)) {
                     return;
                 }

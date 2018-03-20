@@ -113,12 +113,22 @@
                         let virtualRepeat = document.querySelector('#basic virtual-repeat');
                         let items = [];
 
-                        for (let i = 0; i < 10000; i++) {
+                        for (let i = 0; i < 10; i++) {
                             items.push({
                                 name: 'simple item ' + i,
                             });
                         }
                         virtualRepeat.items = items;
+
+                        itemCount = items.length;
+                        let c = setInterval(() => {
+                            virtualRepeat.splice('items', itemCount, 0, {name: 'simple item ' + itemCount});
+                            itemCount++;
+
+                            if (itemCount > 10000) {
+                                clearInterval(c);
+                            }
+                        }, 500);
                     })();
                 </script>
             </template>
