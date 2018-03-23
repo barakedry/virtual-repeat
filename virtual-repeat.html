@@ -566,9 +566,11 @@
             }
 
             _renderHeaders() {
+
                 if (!this._visibleHeaders) {
                     return;
                 }
+                let stickyHeaderIndex;
                 const headerIndexes = this._visibleHeaders;
 
                 let nextHeaderPosition = Number.MAX_SAFE_INTEGER;
@@ -578,7 +580,7 @@
                     const item = this.itemForIndex(headerIndex);
                     if (item) {
                         const element = this._elementForItem(item, headerIndex, headerIndex);
-                        let height = this.heightOfItem(this.itemForIndex(headerIndex));
+                        let height = this.heightOfItem(item);
                         let pos = this._positions[headerIndex];
 
                         if (pos <= this.scrollTop) {
@@ -587,17 +589,29 @@
                             if (nextHeaderPosition - this.scrollTop < height) {
                                 staticPosition -= (height - (nextHeaderPosition - this.scrollTop)) -1;
                             }
-                            element.style.top = '-1px';
                             element.style.transform = `translate3d(0, ${staticPosition}px, 0)`;
+//                            element.style.top = '-1px';
                             element.style.position = 'sticky';
-                        } else {
-                            element.style.position = 'block';
+                            stickyHeaderIndex = headerIndex;
+                            break;
                         }
-
                         nextHeaderPosition = pos;
                     }
+                }
 
+                if (this._stickyHeaderIndex && this._stickyHeaderIndex !== stickyHeaderIndex) {
 
+                    const item = this.itemForIndex(this._stickyHeaderIndex);
+                    const element = this._elementForItem(item, this._stickyHeaderIndex, this._stickyHeaderIndex);
+                    const pos = this._positions[this._stickyHeaderIndex];
+
+                    element.style.transform = `translate3d(0, ${pos}px, 0)`;
+//                    element.style.top = '0';
+                    element.style.position = 'absolute';
+                }
+
+                if (stickyHeaderIndex) {
+                    this._stickyHeaderIndex = stickyHeaderIndex
                 }
 
 
