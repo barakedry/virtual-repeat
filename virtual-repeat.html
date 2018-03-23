@@ -118,6 +118,7 @@
 
                 const onFrame = () => {
                     let shouldRender = false;
+
                     if (this.scrollTop !== lastScrollTop) {
                         shouldRender = true;
                         lastScrollTop = this.scrollTop;
@@ -126,6 +127,7 @@
                     if (this.clientHeight !== this._viewportHeight) {
                         shouldRender = true;
                         this._viewportHeight = this.clientHeight;
+                        console.log('_viewportHeight', this._viewportHeight);
                     }
 
                     if (shouldRender) {
@@ -136,14 +138,9 @@
 
                 window.requestAnimationFrame(onFrame);
 
-//                this.addEventListener('scroll', e => {
-//                    this._render(e);
-//                });
-
 
                 window.getComputedStyle(this);
                 this._viewportHeight = this.getBoundingClientRect().height || this.clientHeight;
-                console.log('_viewportHeight', this._viewportHeight);
             }
 
             _createDefaultHeaderTemplate() {
@@ -447,6 +444,25 @@
                 return new this._ctors[type](model);
             }
 
+
+            __handleObservedPaths(path) {
+                // Handle cases where path changes should cause a re-sort/filter
+                if (this.__sortFn || this.__filterFn) {
+                    if (!path) {
+                        // Always re-render if the item itself changed
+                        this.__debounceRender(this.__render, this.delay);
+                    } else if (this.__observePaths) {
+                        // Otherwise, re-render if the path changed matches an observed path
+                        let paths = this.__observePaths;
+                        for (let i=0; i<paths.length; i++) {
+                            if (path.indexOf(paths[i]) === 0) {
+                                this.__debounceRender(this.__render, this.delay);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Called as a side effect of a host items.<key>.<path> path change,
             // responsible for notifying item.<path> changes to inst for key
             __handleItemPath(path, value) {
@@ -457,13 +473,20 @@
                 if (itemsIdx == parseInt(itemsIdx, 10)) {
                     let itemSubPath = dot < 0 ? '' : itemsPath.substring(dot + 1);
                     // If the path is observed, it will trigger a full refresh
-                    this.__handleObservedPaths(itemSubPath);
+                    //this.__handleObservedPaths(itemSubPath);
+
                     // Note, even if a rull refresh is triggered, always do the path
                     // notification because unless mutableData is used for dom-repeat
                     // and all elements in the instance subtree, a full refresh may
                     // not trigger the proper update.
-                    let instIdx = this.__itemsIdxToInstIdx[itemsIdx];
-                    let inst = this.__instances[instIdx];
+                    let instIdx = itemsIdx;
+
+                    let inst;
+                    let item = this.itemForIndex(itemsIdx);
+                    if (this._instanceForItemMap.has(item)) {
+                        inst = this._instanceForItemMap.get(item);
+                    }
+
                     if (inst) {
                         let itemPath = this.as + (itemSubPath ? '.' + itemSubPath : '');
                         // This is effectively `notifyPath`, but avoids some of the overhead
@@ -590,7 +613,6 @@
                                 staticPosition -= (height - (nextHeaderPosition - this.scrollTop)) -1;
                             }
                             element.style.transform = `translate3d(0, ${staticPosition}px, 0)`;
-//                            element.style.top = '-1px';
                             element.style.position = 'sticky';
                             stickyHeaderIndex = headerIndex;
                             break;
@@ -606,7 +628,6 @@
                     const pos = this._positions[this._stickyHeaderIndex];
 
                     element.style.transform = `translate3d(0, ${pos}px, 0)`;
-//                    element.style.top = '0';
                     element.style.position = 'absolute';
                 }
 
