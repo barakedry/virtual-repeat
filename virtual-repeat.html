@@ -101,7 +101,6 @@
                 if (!this.__isItemGroup) {
                     this.__isItemGroup = new WeakSet();
                 }
-                this._setupForTemplates(this.querySelectorAll('template'));
             }
 
             connectedCallback() {
@@ -141,6 +140,7 @@
 
                 window.getComputedStyle(this);
                 this._viewportHeight = this.getBoundingClientRect().height || this.clientHeight;
+                this._setupForTemplates(this.querySelectorAll('template'));
             }
 
             _createDefaultHeaderTemplate() {
